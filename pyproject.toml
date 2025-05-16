@@ -1,20 +1,20 @@
 [project]
-name = "OpenDeepSearch"
-version = "0.1.0"
-description = "Default template for PDM package"
+name = "ls"
+version = "pdm install OpenDeepSearch"
+description = "Open Deep Search Development"
 authors = [
     {name = "Salaheddin Alzu'bi", email = "salaheddinalzubi@gmail.com"},
+    {name = "Keith Ransom", email = "kmransom52@gmail.com"},
 ]
 
-dependencies = ["openai>=1.66.2", "datasets>=3.3.2", "transformers>=4.49.0", "litellm>=1.61.20", "langchain>=0.3.19", "crawl4ai @ git+https://github.com/salzubi401/crawl4ai.git@main", "fasttext-wheel>=0.9.2", "wikipedia-api>=0.8.1", "pillow>=10.4.0", "smolagents>=1.9.2", "gradio==5.20.1"]
+dependencies = ["openai>=1.66.2", "datasets>=3.3.2", "transformers>=4.49.0", "litellm>=1.61.20", "langchain>=0.3.19", "crawl4ai @ git+https://github.com/salzubi401/crawl4ai.git@main", "fasttext>=0.9.3", "wikipedia-api>=0.8.1", "pillow>=10.4.0", "smolagents>=1.9.2", "gradio==5.20.1"]
 requires-python = ">=3.10"
 readme = "README.md"
 license = {text = "MIT"}
 
 [build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
-
+requires = ["pdm-backend"]
+build-backend = "pdm.backend"
 
 [tool.pdm]
 distribution = true
