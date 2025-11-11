@@ -1,0 +1,443 @@
+#!/bin/bash
+
+# OpenDeepSearch Network Troubleshooting Agent Installation Script
+# For Fortinet and Meraki network troubleshooting
+
+set -e  # Exit on any error
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+# Function to print colored output
+print_status() {
+    echo -e "${GREEN}[INFO]${NC} \$1"
+}
+
+print_warning() {
+    echo -e "${YELLOW}[WARNING]${NC} \$1"
+}
+
+print_error() {
+    echo -e "${RED}[ERROR]${NC} \$1"
+}
+
+print_header() {
+    echo -e "${BLUE}================================${NC}"
+    echo -e "${BLUE}\$1${NC}"
+    echo -e "${BLUE}================================${NC}"
+}
+
+# Check if running as root
+check_root() {
+    if [[ $EUID -eq 0 ]]; then
+        print_warning "Running as root. Consider using a virtual environment."
+    fi
+}
+
+# Check system requirements
+check_requirements() {
+    print_header "Checking System Requirements"
+    
+    # Check Python version
+    if command -v python3 &> /dev/null; then
+        PYTHON_VERSION=$(python3 --version | cut -d' ' -f2 | cut -d'.' -f1,2)
+        print_status "Python version: $(python3 --version)"
+        
+        # Check if version is >= 3.8
+        if python3 -c "import sys; exit(0 if sys.version_info >= (3, 8) else 1)"; then
+            print_status "Python version is compatible"
+        else
+            print_error "Python 3.8+ required. Please upgrade Python."
+            exit 1
+        fi
+    else
+        print_error "Python3 not found. Please install Python 3.8+"
+        exit 1
+    fi
+    
+    # Check pip
+    if ! command -v pip3 &> /dev/null; then
+        print_error "pip3 not found. Installing pip..."
+        curl https://bootstrap.pypa.io/get-pip.py | python3
+    fi
+    
+    # Check git
+    if ! command -v git &> /dev/null; then
+        print_error "Git not found. Please install git first."
+        exit 1
+    fi
+}
+
+# Create project directory
+setup_project_directory() {
+    print_header "Setting Up Project Directory"
+    
+    PROJECT_DIR="network-troubleshooter"
+    
+    if [ -d "$PROJECT_DIR" ]; then
+        print_warning "Directory $PROJECT_DIR already exists. Backing up..."
+        mv "$PROJECT_DIR" "${PROJECT_DIR}_backup_$(date +%Y%m%d_%H%M%S)"
+    fi
+    
+    mkdir -p "$PROJECT_DIR"
+    cd "$PROJECT_DIR"
+    print_status "Created project directory: $(pwd)"
+}
+
+# Setup virtual environment
+setup_venv() {
+    print_header "Setting Up Virtual Environment"
+    
+    python3 -m venv network_env
+    source network_env/bin/activate
+    
+    # Upgrade pip
+    pip install --upgrade pip
+    print_status "Virtual environment created and activated"
+}
+
+# Clone OpenDeepSearch repository
+clone_repository() {
+    print_header "Cloning OpenDeepSearch Repository"
+    
+    git clone https://github.com/sentient-agi/OpenDeepSearch.git
+    cd OpenDeepSearch
+    print_status "Repository cloned successfully"
+}
+
+# Install dependencies
+install_dependencies() {
+    print_header "Installing Dependencies"
+    
+    # Install base requirements
+    if [ -f "requirements.txt" ]; then
+        pip install -r requirements.txt
+    fi
+    
+    # Install additional packages for network troubleshooting
+    pip install -U \
+        openai \
+        huggingface-hub \
+        transformers \
+        torch \
+        requests \
+        beautifulsoup4 \
+        selenium \
+        aiohttp \
+        asyncio \
+        pyyaml \
+        python-dotenv \
+        rich \
+        typer \
+        smolagents
+    
+    print_status "All dependencies installed"
+}
+
+# Create configuration files
+create_config_files() {
+    print_header "Creating Configuration Files"
+    
+    # Create .env template
+    cat > .env.template << 'EOF'
+# Search Provider APIs
+GOOGLE_API_KEY=your_google_api_key_here
+GOOGLE_CSE_ID=your_custom_search_engine_id_here
+BRAVE_API_KEY=your_brave_api_key_here
+BING_API_KEY=your_bing_subscription_key_here
+
+# AI Model APIs
+OPENAI_API_KEY=your_openai_key_here
+HUGGINGFACE_API_TOKEN=your_hf_token_here
+
+# Optional: Anthropic Claude
+ANTHROPIC_API_KEY=your_anthropic_key_here
+EOF
+
+    # Create main configuration file
+    cat > config.yaml << 'EOF'
+search:
+  providers:
+    - name: "google"
+      api_key: "${GOOGLE_API_KEY}"
+      cse_id: "${GOOGLE_CSE_ID}"
+      priority: 1
+      enabled: true
+    - name: "brave"
+      api_key: "${BRAVE_API_KEY}"
+      priority: 2
+      enabled: true
+    - name: "bing" 
+      api_key: "${BING_API_KEY}"
+      priority: 3
+      enabled: true
+  
+  max_results_per_provider: 15
+  timeout: 45
+  concurrent_searches: true
+  retry_attempts: 3
+  rate_limit_delay: 1
+
+# Network troubleshooting specific settings
+network_troubleshooting:
+  target_domains:
+    - "docs.fortinet.com"
+    - "community.fortinet.com"
+    - "kb.fortinet.com"
+    - "documentation.meraki.com"
+    - "community.meraki.com"
+    - "developer.cisco.com/meraki"
+    - "reddit.com/r/fortinet"
+    - "reddit.com/r/meraki"
+    - "spiceworks.com"
+    - "serverfault.com"
+    - "networkengineering.stackexchange.com"
+    - "stackoverflow.com"
+  
+  search_modifiers:
+    fortinet:
+      - "site:docs.fortinet.com"
+      - "site:community.fortinet.com"
+      - "site:kb.fortinet.com"
+      - "FortiGate"
+      - "FortiOS"
+    meraki:
+      - "site:documentation.meraki.com"
+      - "site:community.meraki.com"
+      - "Cisco Meraki"
+      - "Meraki Dashboard"
+
+  excluded_domains:
+    - "pinterest.com"
+    - "instagram.com"
+    - "facebook.com"
+    - "twitter.com"
+
+agent:
+  model: "gpt-4"
+  temperature: 0.1
+  max_tokens: 2000
+  timeout: 60
+  system_prompt: |
+    You are a network troubleshooting expert specializing in Fortinet and Meraki devices.
+    Use search results to provide accurate, step-by-step solutions.
+    Always cite official documentation when available.
+    Include relevant CLI commands, configuration examples, and best practices.
+    Format responses clearly with numbered steps and code blocks.
+
+retrieval:
+  chunk_size: 1500
+  overlap: 300
+  min_relevance_score: 0.7
+  max_chunks: 10
+
+logging:
+  level: "INFO"
+  file: "network_troubleshooter.log"
+  max_size: "10MB"
+  backup_count: 5
+EOF
+
+    print_status "Configuration files created"
+}
+
+# Create the main network troubleshooting tool
+create_main_tool() {
+    print_header "Creating Network Troubleshooting Tool"
+    
+    cat > network_troubleshooter.py << 'EOF'
+#!/usr/bin/env python3
+"""
+Network Troubleshooting Agent using OpenDeepSearch
+Specialized for Fortinet and Meraki devices
+"""
+
+import os
+import sys
+import yaml
+import asyncio
+import logging
+from typing import Dict, List, Optional, Any
+from dataclasses import dataclass
+from pathlib import Path
+
+import openai
+from dotenv import load_dotenv
+from rich.console import Console
+from rich.markdown import Markdown
+from rich.panel import Panel
+import typer
+
+# Load environment variables
+load_dotenv()
+
+console = Console()
+app = typer.Typer(help="Network Troubleshooting Agent for Fortinet and Meraki")
+
+@dataclass
+class SearchResult:
+    title: str
+    url: str
+    snippet: str
+    domain: str
+    relevance_score: float = 0.0
+
+class NetworkTroubleshooter:
+    def __init__(self, config_path: str = "config.yaml"):
+        self.config = self._load_config(config_path)
+        self._setup_logging()
+        self._setup_apis()
+        
+    def _load_config(self, config_path: str) -> Dict[str, Any]:
+        """Load configuration from YAML file"""
+        try:
+            with open(config_path, 'r') as f:
+                config = yaml.safe_load(f)
+            return config
+        except FileNotFoundError:
+            console.print(f"[red]Config file {config_path} not found![/red]")
+            sys.exit(1)
+            
+    def _setup_logging(self):
+        """Setup logging configuration"""
+        log_config = self.config.get('logging', {})
+        logging.basicConfig(
+            level=getattr(logging, log_config.get('level', 'INFO')),
+            format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+            handlers=[
+                logging.FileHandler(log_config.get('file', 'troubleshooter.log')),
+                logging.StreamHandler()
+            ]
+        )
+        self.logger = logging.getLogger(__name__)
+        
+    def _setup_apis(self):
+        """Setup API clients"""
+        # OpenAI setup
+        if os.getenv('OPENAI_API_KEY'):
+            openai.api_key = os.getenv('OPENAI_API_KEY')
+        else:
+            console.print("[yellow]Warning: OPENAI_API_KEY not set[/yellow]")
+    
+    def enhance_query(self, query: str) -> str:
+        """Enhance search query with network-specific terms"""
+        query_lower = query.lower()
+        
+        # Detect vendor and add specific search modifiers
+        if any(term in query_lower for term in ['fortinet', 'fortigate', 'fortios']):
+            query += " FortiGate FortiOS (site:docs.fortinet.com OR site:community.fortinet.com OR site:kb.fortinet.com)"
+        elif any(term in query_lower for term in ['meraki', 'cisco meraki']):
+            query += " Cisco Meraki (site:documentation.meraki.com OR site:community.meraki.com)"
+        else:
+            # General network troubleshooting
+            query += " network troubleshooting configuration"
+            
+        return query
+    
+    async def search_multiple_providers(self, query: str) -> List[SearchResult]:
+        """Search across multiple providers"""
+        enhanced_query = self.enhance_query(query)
+        all_results = []
+        
+        # This would integrate with the actual OpenDeepSearch implementation
+        # For now, this is a placeholder structure
+        console.print(f"[blue]Searching for:[/blue] {enhanced_query}")
+        
+        # Simulate search results (replace with actual OpenDeepSearch calls)
+        sample_results = [
+            SearchResult(
+                title="FortiGate VPN Configuration Guide",
+                url="https://docs.fortinet.com/document/fortigate/7.0.0/administration-guide/954635/ipsec-vpn",
+                snippet="Step-by-step guide for configuring IPSec VPN on FortiGate...",
+                domain="docs.fortinet.com",
+                relevance_score=0.95
+            ),
+            SearchResult(
+                title="Meraki MX Firewall Rules",
+                url="https://documentation.meraki.com/MX/Firewall_and_Traffic_Shaping/MX_Firewall_Settings",
+                snippet="Configure firewall rules on Meraki MX security appliances...",
+                domain="documentation.meraki.com", 
+                relevance_score=0.90
+            )
+        ]
+        
+        return sample_results
+    
+    def generate_solution(self, query: str, search_results: List[SearchResult]) -> str:
+        """Generate solution using AI based on search results"""
+        if not os.getenv('OPENAI_API_KEY'):
+            return "OpenAI API key not configured. Please set OPENAI_API_KEY in .env file."
+            
+        # Prepare context from search results
+        context = "\n\n".join([
+            f"Title: {result.title}\nURL: {result.url}\nContent: {result.snippet}"
+            for result in search_results[:5]  # Use top 5 results
+        ])
+        
+        system_prompt = self.config['agent']['system_prompt']
+        
+        try:
+            response = openai.ChatCompletion.create(
+                model=self.config['agent']['model'],
+                temperature=self.config['agent']['temperature'],
+                max_tokens=self.config['agent']['max_tokens'],
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": f"Query: {query}\n\nSearch Results:\n{context}\n\nProvide a detailed solution:"}
+                ]
+            )
+            
+            return response.choices[0].message.content
+            
+        except Exception as e:
+            self.logger.error(f"Error generating solution: {e}")
+            return f"Error generating solution: {str(e)}"
+    
+    async def troubleshoot(self, query: str) -> str:
+        """Main troubleshooting method"""
+        console.print(Panel(f"[bold blue]Troubleshooting Query:[/bold blue] {query}", expand=False))
+        
+        # Search for relevant information
+        with console.status("[bold green]Searching multiple providers..."):
+            search_results = await self.search_multiple_providers(query)
+        
+        console.print(f"[green]Found {len(search_results)} relevant results[/green]")
+        
+        # Generate solution
+        with console.status("[bold green]Generating solution..."):
+            solution = self.generate_solution(query, search_results)
+        
+        return solution
+
+# CLI Commands
+@app.command()
+def troubleshoot(
+    query: str = typer.Argument(..., help="Network troubleshooting query"),
+    config: str = typer.Option("config.yaml", help="Configuration file path")
+):
+    """Troubleshoot network issues using AI-powered search"""
+    troubleshooter = NetworkTroubleshooter(config)
+    
+    # Run async function
+    solution = asyncio.run(troubleshooter.troubleshoot(query))
+    
+    # Display solution
+    console.print("\n" + "="*80)
+    console.print(Panel(Markdown(solution), title="[bold green]Solution[/bold green]", expand=False))
+
+@app.command()
+def setup():
+    """Setup API keys and configuration"""
+    console.print("[bold blue]Network Troubleshooter Setup[/bold blue]\n")
+    
+    # Check if .env exists
+    if not Path(".env").exists():
+        console.print("[yellow]Creating .env file from template...[/yellow]")
+        if Path(".env.template").exists():
+            import shutil
+            shutil.copy(".env.template", ".env")
+            console.print("[green].env file created! Please edit it with your API keys.[/green]")
